@@ -67,7 +67,7 @@ class Hyperparameters:
     num_heads = int(os.environ.get("NUM_HEADS", 8))
     mlp_mult = int(os.environ.get("MLP_MULT", 2))
     mlp_hidden = int(os.environ.get("MLP_HIDDEN", 1536))
-    tie_embeddings = bool(int(os.environ.get("TIE_EMBEDDINGS", "1")))
+    tie_embeddings = bool(int(os.environ.get("TIE_EMBEDDINGS", "0")))
     rope_base = float(os.environ.get("ROPE_BASE", 500000.0))
     logit_softcap = float(os.environ.get("LOGIT_SOFTCAP", 30.0))
     eval_stride = int(os.environ.get("EVAL_STRIDE", 512))
