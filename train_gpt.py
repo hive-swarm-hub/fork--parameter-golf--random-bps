@@ -70,6 +70,7 @@ class Hyperparameters:
     tie_embeddings = bool(int(os.environ.get("TIE_EMBEDDINGS", "0")))
     rope_base = float(os.environ.get("ROPE_BASE", 500000.0))
     logit_softcap = float(os.environ.get("LOGIT_SOFTCAP", 30.0))
+    eval_stride = int(os.environ.get("EVAL_STRIDE", 512))
 
     # Optimizer hyperparameters.
     embed_lr = float(os.environ.get("EMBED_LR", 0.6))
@@ -726,6 +727,25 @@ class GPT(nn.Module):
         logits = self.logit_softcap * torch.tanh(logits_proj / self.logit_softcap)
         return F.cross_entropy(logits.float(), targets, reduction="mean")
 
+    def forward_logits(self, input_ids: Tensor) -> Tensor:
+        x = self.tok_emb(input_ids)
+        x = F.rms_norm(x, (x.size(-1),))
+        x0 = x
+        skips: list[Tensor] = []
+        for i in range(self.num_encoder_layers):
+            x = self.blocks[i](x, x0)
+            skips.append(x)
+        for i in range(self.num_decoder_layers):
+            if skips:
+                x = x + self.skip_weights[i].to(dtype=x.dtype)[None, None, :] * skips.pop()
+            x = self.blocks[self.num_encoder_layers + i](x, x0)
+        x = self.final_norm(x)
+        if self.tie_embeddings:
+            logits_proj = F.linear(x, self.tok_emb.weight)
+        else:
+            logits_proj = self.lm_head(x)
+        return self.logit_softcap * torch.tanh(logits_proj / self.logit_softcap)
+
 
 # -----------------------------
 # TRAINING
@@ -1121,6 +1141,66 @@ def main() -> None:
         f"eval_time:{1000.0 * (time.perf_counter() - t_qeval):.0f}ms"
     )
     log0(f"final_int8_zlib_roundtrip_exact val_loss:{q_val_loss:.8f} val_bpb:{q_val_bpb:.8f}")
+
+    # Sliding window evaluation for better BPB scoring
+    if args.eval_stride > 0 and master_process or (dist.is_available() and dist.is_initialized()):
+        torch.cuda.synchronize()
+        t_sw = time.perf_counter()
+        seq_len = args.train_seq_len
+        stride = args.eval_stride
+        total_tokens = val_tokens.numel() - 1
+        starts = list(range(0, total_tokens - seq_len + 1, stride))
+        rank_starts = starts[rank::world_size]
+        raw_model = base_model
+        nll_accum = torch.zeros(total_tokens, dtype=torch.float64)
+        byte_accum = torch.zeros(total_tokens, dtype=torch.float64)
+        scored = torch.zeros(total_tokens, dtype=torch.bool)
+        model.eval()
+        with torch.inference_mode():
+            for ws in rank_starts:
+                we = min(ws + seq_len, total_tokens)
+                wlen = we - ws
+                window = val_tokens[ws:we + 1].to(device=device, dtype=torch.int64)
+                x_w = window[:-1].unsqueeze(0)
+                y_w = window[1:]
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
+                    logits_w = raw_model.forward_logits(x_w).squeeze(0)[:wlen].float()
+                per_tok_nll = F.cross_entropy(logits_w, y_w, reduction='none').to(torch.float64).cpu()
+                score_start = 0 if ws == 0 else wlen - stride
+                for j in range(score_start, wlen):
+                    tok_idx = ws + j
+                    if tok_idx < total_tokens and not scored[tok_idx]:
+                        scored[tok_idx] = True
+                        nll_accum[tok_idx] = per_tok_nll[j].item()
+                        prev_id = int(val_tokens[tok_idx].item())
+                        tgt_id = int(val_tokens[tok_idx + 1].item())
+                        tb = float(base_bytes_lut[tgt_id].item())
+                        if has_leading_space_lut[tgt_id].item() and not is_boundary_token_lut[prev_id].item():
+                            tb += 1.0
+                        byte_accum[tok_idx] = tb
+        if dist.is_available() and dist.is_initialized():
+            scored_d = scored.to(device=device, dtype=torch.float64)
+            nll_d = nll_accum.to(device=device)
+            byte_d = byte_accum.to(device=device)
+            dist.all_reduce(scored_d, op=dist.ReduceOp.MAX)
+            dist.all_reduce(nll_d, op=dist.ReduceOp.SUM)
+            dist.all_reduce(byte_d, op=dist.ReduceOp.SUM)
+            mask = scored_d > 0
+            sw_nll = nll_d[mask].sum().item()
+            sw_count = float(mask.sum().item())
+            sw_bytes = byte_d[mask].sum().item()
+        else:
+            mask = scored
+            sw_nll = nll_accum[mask].sum().item()
+            sw_count = float(mask.sum().item())
+            sw_bytes = byte_accum[mask].sum().item()
+        sw_loss = sw_nll / max(sw_count, 1.0)
+        sw_bpt = sw_loss / math.log(2.0)
+        sw_tpb = sw_count / max(sw_bytes, 1.0)
+        sw_bpb = sw_bpt * sw_tpb
+        torch.cuda.synchronize()
+        log0(f"sliding_window_eval val_loss:{sw_loss:.4f} val_bpb:{sw_bpb:.4f} stride:{stride} eval_time:{1000.0*(time.perf_counter()-t_sw):.0f}ms")
+        log0(f"final_int8_zlib_roundtrip_exact val_loss:{sw_loss:.8f} val_bpb:{sw_bpb:.8f}")
 
     if distributed:
         dist.destroy_process_group()
