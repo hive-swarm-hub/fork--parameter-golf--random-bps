@@ -9,3 +9,9 @@ __pycache__/
 *.pt
 *.ptz
 logs/
+slurm_*.log
+*.sh
+!prepare.sh
+!eval/eval.sh
+parameter_golf_*.py
+quant_sweep*.log
