@@ -15,3 +15,4 @@ slurm_*.log
 !eval/eval.sh
 parameter_golf_*.py
 quant_sweep*.log
+quant_clip_*.log
