@@ -60,18 +60,18 @@ class Hyperparameters:
     eval_seq_len = int(os.environ.get("EVAL_SEQ_LEN", train_seq_len))
     # Sliding window evaluation: stride in tokens (0 = disabled, uses non-overlapping chunks).
     # When > 0, a separate sliding-window eval pass runs after the standard roundtrip eval.
-    eval_stride = int(os.environ.get("EVAL_STRIDE", "512"))
+    eval_stride = int(os.environ.get("EVAL_STRIDE", "64"))
     max_wallclock_seconds = float(os.environ.get("MAX_WALLCLOCK_SECONDS", 600.0))
     qk_gain_init = float(os.environ.get("QK_GAIN_INIT", 1.5))
 
     # Model shape.
     vocab_size = int(os.environ.get("VOCAB_SIZE", 1024))
-    num_layers = int(os.environ.get("NUM_LAYERS", 9))
+    num_layers = int(os.environ.get("NUM_LAYERS", 10))
     num_kv_heads = int(os.environ.get("NUM_KV_HEADS", 4))
     model_dim = int(os.environ.get("MODEL_DIM", 512))
     num_heads = int(os.environ.get("NUM_HEADS", 8))
     mlp_mult = int(os.environ.get("MLP_MULT", 2))
-    _default_mlp_hidden = 1536
+    _default_mlp_hidden = 1344
     mlp_hidden = int(os.environ.get("MLP_HIDDEN", _default_mlp_hidden))
     tie_embeddings = bool(int(os.environ.get("TIE_EMBEDDINGS", "1")))
     rope_base = float(os.environ.get("ROPE_BASE", 500000.0))
