@@ -48,19 +48,19 @@ class Hyperparameters:
 
     # Validation cadence and batch size. Validation always uses the full fineweb_val split.
     val_batch_size = int(os.environ.get("VAL_BATCH_SIZE", 524_288))
-    val_loss_every = int(os.environ.get("VAL_LOSS_EVERY", 1000))
+    val_loss_every = int(os.environ.get("VAL_LOSS_EVERY", 0))
     train_log_every = int(os.environ.get("TRAIN_LOG_EVERY", 200))
 
     # Training length.
     iterations = int(os.environ.get("ITERATIONS", 20000))
-    warmdown_iters = int(os.environ.get("WARMDOWN_ITERS", 1200))
+    warmdown_iters = int(os.environ.get("WARMDOWN_ITERS", 3000))
     warmup_steps = int(os.environ.get("WARMUP_STEPS", 20))
     train_batch_tokens = int(os.environ.get("TRAIN_BATCH_TOKENS", 524_288))
-    train_seq_len = int(os.environ.get("TRAIN_SEQ_LEN", 1024))
+    train_seq_len = int(os.environ.get("TRAIN_SEQ_LEN", 4096))
     eval_seq_len = int(os.environ.get("EVAL_SEQ_LEN", train_seq_len))
     # Sliding window evaluation: stride in tokens (0 = disabled, uses non-overlapping chunks).
     # When > 0, a separate sliding-window eval pass runs after the standard roundtrip eval.
-    eval_stride = int(os.environ.get("EVAL_STRIDE", "0"))
+    eval_stride = int(os.environ.get("EVAL_STRIDE", "512"))
     max_wallclock_seconds = float(os.environ.get("MAX_WALLCLOCK_SECONDS", 600.0))
     qk_gain_init = float(os.environ.get("QK_GAIN_INIT", 1.5))
 
@@ -71,32 +71,32 @@ class Hyperparameters:
     model_dim = int(os.environ.get("MODEL_DIM", 512))
     num_heads = int(os.environ.get("NUM_HEADS", 8))
     mlp_mult = int(os.environ.get("MLP_MULT", 2))
-    _default_mlp_hidden = mlp_mult * model_dim
+    _default_mlp_hidden = 1536
     mlp_hidden = int(os.environ.get("MLP_HIDDEN", _default_mlp_hidden))
     tie_embeddings = bool(int(os.environ.get("TIE_EMBEDDINGS", "1")))
-    rope_base = float(os.environ.get("ROPE_BASE", 10000.0))
+    rope_base = float(os.environ.get("ROPE_BASE", 500000.0))
     logit_softcap = float(os.environ.get("LOGIT_SOFTCAP", 30.0))
 
     # Multi-token prediction auxiliary objective.
     # MTP_NUM_HEADS=1 means one extra head predicts token i+2 from hidden state i.
     mtp_num_heads = int(os.environ.get("MTP_NUM_HEADS", 1))
-    mtp_loss_weight = float(os.environ.get("MTP_LOSS_WEIGHT", 0.1))
+    mtp_loss_weight = float(os.environ.get("MTP_LOSS_WEIGHT", 0.01))
 
     # Optimizer hyperparameters.
     embed_lr = float(os.environ.get("EMBED_LR", 0.6))
     head_lr = float(os.environ.get("HEAD_LR", 0.008))
     tied_embed_lr = float(os.environ.get("TIED_EMBED_LR", 0.05))
     tied_embed_init_std = float(os.environ.get("TIED_EMBED_INIT_STD", 0.005))
-    matrix_lr = float(os.environ.get("MATRIX_LR", 0.04))
-    scalar_lr = float(os.environ.get("SCALAR_LR", 0.04))
-    muon_momentum = float(os.environ.get("MUON_MOMENTUM", 0.95))
+    matrix_lr = float(os.environ.get("MATRIX_LR", 0.02))
+    scalar_lr = float(os.environ.get("SCALAR_LR", 0.02))
+    muon_momentum = float(os.environ.get("MUON_MOMENTUM", 0.99))
     muon_backend_steps = int(os.environ.get("MUON_BACKEND_STEPS", 5))
-    muon_momentum_warmup_start = float(os.environ.get("MUON_MOMENTUM_WARMUP_START", 0.85))
-    muon_momentum_warmup_steps = int(os.environ.get("MUON_MOMENTUM_WARMUP_STEPS", 500))
+    muon_momentum_warmup_start = float(os.environ.get("MUON_MOMENTUM_WARMUP_START", 0.92))
+    muon_momentum_warmup_steps = int(os.environ.get("MUON_MOMENTUM_WARMUP_STEPS", 1500))
     beta1 = float(os.environ.get("BETA1", 0.9))
     beta2 = float(os.environ.get("BETA2", 0.95))
     adam_eps = float(os.environ.get("ADAM_EPS", 1e-8))
-    grad_clip_norm = float(os.environ.get("GRAD_CLIP_NORM", 0.0))
+    grad_clip_norm = float(os.environ.get("GRAD_CLIP_NORM", 0.3))
 
     # External QAT: fraction of training time to use fake-quantized weights.
     qat_fraction = float(os.environ.get("QAT_FRACTION", 0.15))
@@ -1495,7 +1495,6 @@ def main() -> None:
 
     if distributed:
         dist.destroy_process_group()
-
 
 if __name__ == "__main__":
     main()
